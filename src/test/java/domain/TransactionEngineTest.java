@@ -224,5 +224,120 @@ class TransactionEngineTest {
         assertEquals(200, pattern, "Pattern should be 200 when differences are consistent.");
     }
 
+    @Test
+    void testTransactionPatternExactThresholdBoundary() {
+        // Transactions exactly at and just around the threshold
+        Transaction txn1 = new Transaction();
+        txn1.setTransactionId(1);
+        txn1.setAccountId(1001);
+        txn1.setAmount(1000);  // Exactly at threshold
+        transactionEngine.addTransactionAndDetectFraud(txn1);
+
+        Transaction txn2 = new Transaction();
+        txn2.setTransactionId(2);
+        txn2.setAccountId(1001);
+        txn2.setAmount(1001);  // Just above threshold
+        transactionEngine.addTransactionAndDetectFraud(txn2);
+
+        Transaction txn3 = new Transaction();
+        txn3.setTransactionId(3);
+        txn3.setAccountId(1001);
+        txn3.setAmount(999);   // Just below threshold
+        transactionEngine.addTransactionAndDetectFraud(txn3);
+
+        // Pattern should only detect transactions strictly above threshold
+        int pattern1 = transactionEngine.getTransactionPatternAboveThreshold(1000);
+        assertEquals(1, pattern1, "Transactions at or below threshold should not create a pattern");
+    }
+
+    @Test
+    void testFraudDetectionStrictBoundaryConditions() {
+        // Establish baseline transactions to calculate average
+        Transaction baseline1 = new Transaction();
+        baseline1.setTransactionId(1);
+        baseline1.setAccountId(101);
+        baseline1.setAmount(100);
+        baseline1.setDebit(true);
+        transactionEngine.addTransactionAndDetectFraud(baseline1);
+
+        Transaction baseline2 = new Transaction();
+        baseline2.setTransactionId(2);
+        baseline2.setAccountId(101);
+        baseline2.setAmount(100);
+        baseline2.setDebit(true);
+        transactionEngine.addTransactionAndDetectFraud(baseline2);
+
+        // Test various boundary scenarios
+        Transaction[] boundaryScenarios = new Transaction[4];
+
+        // Scenario 1: Exactly 2x average (should not be fraudulent)
+        boundaryScenarios[0] = createTransaction(3, 101, 200, true);
+
+        // Scenario 2: Just below 2x average (should not be fraudulent)
+        boundaryScenarios[1] = createTransaction(4, 101, 199, true);
+
+        // Scenario 3: Just above 2x average (should be fraudulent)
+        boundaryScenarios[2] = createTransaction(5, 101, 201, true);
+
+        // Scenario 4: Non-debit transaction above 2x average (should not be fraudulent)
+        boundaryScenarios[3] = createTransaction(6, 101, 201, false);
+
+        // Expected fraud scores
+        int[] expectedScores = {0, 0, 1, 0};
+
+        for (int i = 0; i < boundaryScenarios.length; i++) {
+            int fraudScore = transactionEngine.detectFraudulentTransaction(boundaryScenarios[i]);
+            assertEquals(expectedScores[i], fraudScore,
+                    "Fraud detection failed for scenario " + (i+1) +
+                            " with transaction amount " + boundaryScenarios[i].amount);
+        }
+    }
+
+    @Test
+    void testFraudScoreCalculationAccuracy() {
+        // Establish baseline transactions to calculate average
+        Transaction baseline1 = new Transaction();
+        baseline1.setTransactionId(1);
+        baseline1.setAccountId(101);
+        baseline1.setAmount(100);
+        baseline1.setDebit(true);
+        transactionEngine.addTransactionAndDetectFraud(baseline1);
+
+        Transaction baseline2 = new Transaction();
+        baseline2.setTransactionId(2);
+        baseline2.setAccountId(101);
+        baseline2.setAmount(100);
+        baseline2.setDebit(true);
+        transactionEngine.addTransactionAndDetectFraud(baseline2);
+
+        // Create a fraudulent transaction
+        Transaction fraudTxn = new Transaction();
+        fraudTxn.setTransactionId(3);
+        fraudTxn.setAccountId(101);
+        fraudTxn.setAmount(301);  // Just above 2x average
+        fraudTxn.setDebit(true);
+
+        // Verify exact fraud score calculation
+        int expectedFraudScore = fraudTxn.getAmount() - (2 * 100);  // Explicit calculation
+        int actualFraudScore = transactionEngine.detectFraudulentTransaction(fraudTxn);
+
+        assertEquals(expectedFraudScore, actualFraudScore,
+                "Fraud score calculation must precisely subtract 2x average");
+
+        // Additional test to ensure subtraction, not addition
+        assertNotEquals(fraudTxn.getAmount() + (2 * 100), actualFraudScore,
+                "Fraud score must use subtraction, not addition");
+    }
+
+    // Utility method to create transactions easily
+    private Transaction createTransaction(int transactionId, int accountId, int amount, boolean isDebit) {
+        Transaction txn = new Transaction();
+        txn.setTransactionId(transactionId);
+        txn.setAccountId(accountId);
+        txn.setAmount(amount);
+        txn.setDebit(isDebit);
+        return txn;
+    }
+
 
 }
